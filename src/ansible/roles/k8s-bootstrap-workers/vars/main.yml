@@ -1,0 +1,15 @@
+---
+# vars file for worker nodes
+
+cri_tools_version: 1.22.0
+runc_version: 1.0.2
+cni_plugins_version: 1.0.1
+containerd_version: 1.5.7
+
+cri_tools_dl: https://github.com/kubernetes-sigs/cri-tools/releases/download/v{{ cri_tools_version }}/crictl-v{{cri_tools_version}}-linux-amd64.tar.gz
+runc_dl: https://github.com/opencontainers/runc/releases/download/v{{ runc_version }}/runc.amd64
+cni_plugins_dl: https://github.com/containernetworking/plugins/releases/download/v{{ cni_plugins_version }}/cni-plugins-linux-amd64-v{{ cni_plugins_version }}.tgz
+containerd_dl: https://github.com/containerd/containerd/releases/download/v{{ containerd_version }}/containerd-{{ containerd_version }}-linux-amd64.tar.gz
+kube_proxy_dl: https://dl.k8s.io/v{{ kubernetes_version }}/bin/linux/amd64/kube-proxy
+kubelet_dl: https://dl.k8s.io/v{{ kubernetes_version }}/bin/linux/amd64/kubelet
+kubectl_dl: https://dl.k8s.io/v{{ kubernetes_version }}/bin/linux/amd64/kubectl

@@ -1,0 +1,45 @@
+---
+# tasks file for k8s cluster setup
+
+- name: Get hostname
+  command: hostname
+  register: hostname
+
+- name: Clean remote directory
+  command: "rm -rf {{ remote_path }}"
+
+- name: Create remote directory
+  ansible.builtin.file:
+      path: "{{ remote_path }}"
+      state: directory
+
+- name: Copy archive certificates bundle to host
+  ansible.builtin.copy:
+    src: "{{ certs_archive }}"
+    dest: "{{ remote_path }}"
+    remote_src: no
+
+- name: Copy encryption-config.yml to each controller
+  ansible.builtin.copy:
+    src: "{{ encryption_config }}"
+    dest: "{{ remote_path }}"
+    remote_src: no
+  when: '"controller-" in inventory_hostname'
+
+  
+- name: Copy archive kubeconfig bundle to host
+  ansible.builtin.copy:
+    src: "{{ kubeconfig_archive }}"
+    dest: "{{ remote_path }}"
+
+- name: Unarchive certificates bundle on host
+  ansible.builtin.unarchive:
+    src: "{{ remote_path }}/{{ certs_archive | basename }}"
+    dest: "{{ remote_path }}"
+    remote_src: yes
+
+- name: Unarchive kubeconfig bundle on host
+  ansible.builtin.unarchive:
+    src: "{{ remote_path }}/{{ kubeconfig_archive | basename }}"
+    dest: "{{ remote_path }}"
+    remote_src: yes

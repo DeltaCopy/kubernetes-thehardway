@@ -1,0 +1,16 @@
+---
+# Vars file for k8s setup
+
+kube_api_dl: https://dl.k8s.io/v{{ kubernetes_version }}/bin/linux/amd64/kube-apiserver
+kube_controller_manager_dl: https://dl.k8s.io/v{{ kubernetes_version }}/bin/linux/amd64/kube-controller-manager
+kube_scheduler_dl: https://dl.k8s.io/v{{ kubernetes_version }}/bin/linux/amd64/kube-scheduler
+kubectl_dl: https://dl.k8s.io/v{{ kubernetes_version }}/bin/linux/amd64/kubectl
+kube_api_service_path: /etc/systemd/system/kube-apiserver.service
+kube_service_cluster_ip_range : 10.32.0.0/24
+kube_controller_manager_cidr: 10.200.0.0/16
+kube_controller_manager_service_cluster_ip_range: 10.32.0.0/24
+kube_controller_manager_service_path: /etc/systemd/system/kube-controller-manager.service
+kube_scheduler_config_path: /etc/kubernetes/config/kube-scheduler.yaml
+kube_scheduler_service_path: /etc/systemd/system/kube-scheduler.service
+nginx_healthcheck_path: /etc/nginx/sites-available/kubernetes.default.svc.cluster.local
+nginx_sites_enabled_path: /etc/nginx/sites-enabled

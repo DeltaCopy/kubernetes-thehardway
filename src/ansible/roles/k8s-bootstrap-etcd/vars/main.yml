@@ -1,0 +1,9 @@
+---
+# Vars file for k8s setup
+
+
+etcd_version: 3.4.17
+etcdtl_api: 3
+etcd_dl: https://github.com/etcd-io/etcd/releases/download/v{{etcd_version}}/etcd-v{{ etcd_version }}-linux-amd64.tar.gz
+etcd_file: etcd-v{{ etcd_version }}-linux-amd64.tar.gz
+etcd_service_path: /etc/systemd/system/etcd.service

@@ -1,0 +1,130 @@
+---
+# tasks file for k8s cluster setup
+
+- name: Get hostname of host
+  ansible.builtin.command: hostname
+  register: hostname
+  when: '"controller-" in inventory_hostname'
+
+- name: Check whether etcd archive already exists
+  ansible.builtin.stat:
+    path: "{{ temp_dir }}/etcd-v{{ etcd_version }}-linux-amd64.tar.gz"
+  register: stat_result
+  when: '"controller-" in inventory_hostname'
+
+- name: Download the latest etcd release
+  ansible.builtin.get_url:
+    url: "{{ etcd_dl }}"
+    dest: "{{ temp_dir }}"
+  when:
+    - '"controller-" in inventory_hostname'
+    - not stat_result.stat.exists
+
+- name: Unarchive etcd release
+  ansible.builtin.unarchive:
+    src: "{{ temp_dir }}/etcd-v{{ etcd_version }}-linux-amd64.tar.gz"
+    dest: "{{ temp_dir }}"
+    remote_src: yes
+  when: '"controller-" in inventory_hostname'
+
+- name: Copy etcd binary files across to /usr/local/bin
+  ansible.builtin.copy:
+    src: "{{ temp_dir }}/etcd-v{{ etcd_version }}-linux-amd64/etcd"
+    dest: /usr/local/bin/etcd
+    mode: "0775"
+    remote_src: yes
+    force: yes
+  become: yes
+  when: '"controller-" in inventory_hostname'
+
+- name: Copy etcdctl binary files across to /usr/local/bin
+  ansible.builtin.copy:
+    src: "{{ temp_dir }}/etcd-v{{ etcd_version }}-linux-amd64/etcdctl"
+    dest: /usr/local/bin/etcdctl
+    mode: "0775"
+    remote_src: yes
+    force: yes
+  become: yes
+  when: '"controller-" in inventory_hostname'
+
+- name: Get etcd version
+  ansible.builtin.command: "etcd --version"
+  when: '"controller-" in inventory_hostname'
+
+- name: Get etcdctl version
+  ansible.builtin.command: "etcdctl version"
+  when: '"controller-" in inventory_hostname'
+
+- name: Create directory /etc/etcd
+  ansible.builtin.file:
+    path: /etc/etcd
+    state: directory
+  become: yes
+  when: '"controller-" in inventory_hostname'
+
+- name: Create directory /var/lib/etcd chmod 700
+  ansible.builtin.file:
+    path: /var/lib/etcd
+    state: directory
+    mode: "0700"
+  become: yes
+  when: '"controller-" in inventory_hostname'
+
+- name: Copy ca.pem, kubernetes-key.pem, kubernetes.pem files to /etc/etcd
+  ansible.builtin.copy:
+    src: "{{ remote_path }}/{{ item }}"
+    dest: /etc/etcd
+    remote_src: yes
+  loop:
+    - ca.pem
+    - kubernetes-key.pem
+    - kubernetes.pem
+  become: yes
+  when: '"controller-" in inventory_hostname'
+
+- name: debug ip address
+  debug:
+    msg: "{{ ansible_default_ipv4.address }}"
+  when: '"controller-" in inventory_hostname'
+
+- name: Template etcd service file
+  ansible.builtin.template:
+    src: etcd.service.j2
+    dest: "{{ etcd_service_path }}"
+  become: yes
+  when: '"controller-" in inventory_hostname'
+
+- name: daemon_reload
+  ansible.builtin.systemd:
+    daemon_reload: yes
+  become: yes
+  when: '"controller-" in inventory_hostname'
+
+- name: Register etcd service
+  ansible.builtin.systemd:
+    name: etcd
+    state: started
+    enabled: yes
+  become: yes
+  when: '"controller-" in inventory_hostname'
+
+- name: Wait for 15s for etcd services to become stable
+  wait_for:
+    timeout: 15
+  delegate_to: localhost
+
+- name: Get etcd member list
+  ansible.builtin.shell: "export ETCDCTL_API={{ etcdtl_api }}; \
+    etcdctl member list \
+    --endpoints=https://127.0.0.1:2379 \
+    --cacert=/etc/etcd/ca.pem \
+    --cert=/etc/etcd/kubernetes.pem \
+    --key=/etc/etcd/kubernetes-key.pem"
+  become: yes
+  register: etcd_member_list
+  when: '"controller-" in inventory_hostname'
+
+- name: Print etcd member list
+  debug:
+    msg: "{{ etcd_member_list }}"
+  when: '"controller-" in inventory_hostname'

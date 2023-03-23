@@ -1,0 +1,18 @@
+---
+- hosts: controllers:workers
+  roles:
+    - ansible/roles/k8s-transfer-conf
+    - ansible/roles/k8s-bootstrap-etcd
+    - ansible/roles/k8s-bootstrap-control-plane
+    - ansible/roles/k8s-bootstrap-workers
+  vars:
+    etcd_servers:
+      ${etcd_servers}
+    pod_cidr:
+      ${pod_cidr}
+    kubernetes_version: ${kubernetes_version}
+    remote_path: /home/{{ ansible_ssh_user }}/k8s-thw
+    temp_dir: /tmp
+    kubernetes_public_address: ${kubernetes_public_address}
+    kube_apiserver_count: ${kube_apiserver_count}
+    cluster_dns: "${cluster_dns}"

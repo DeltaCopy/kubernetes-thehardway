@@ -1,0 +1,235 @@
+---
+# tasks file for k8s cluster setup
+- name: Extract filename used for the Nginx healthcheck
+  set_fact:
+    nginx_filename: "{{ nginx_healthcheck_path | basename }}"
+
+- name: Remove dpkg lock file before running apt update
+  ansible.builtin.file:
+    path: /var/lib/dpkg/lock-frontend
+    state: absent
+  become: yes
+  when:
+    - '"controller-" in inventory_hostname'
+    - ansible_facts['os_family'] == "Debian"
+
+- name: apt update
+  ansible.builtin.apt:
+    name: "*"
+    state: latest
+  register: apt_action
+  retries: 100
+  become: yes
+  until: apt_action is success or ('Failed to lock apt for exclusive operation' not in apt_action.msg and '/var/lib/dpkg/lock' not in apt_action.msg)
+  when:
+    - '"controller-" in inventory_hostname'
+    - ansible_facts['os_family'] == "Debian"
+
+- name: install nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+  become: yes
+  when:
+    - '"controller-" in inventory_hostname'
+    - ansible_facts['os_family'] == "Debian"
+
+- name: Create Kubernetes configuration directory
+  ansible.builtin.file:
+    path: "{{ item}}"
+    state: directory
+  loop:
+    - /etc/kubernetes/config
+    - /var/lib/kubernetes
+  become: yes
+  when: '"controller-" in inventory_hostname'
+
+- name: Download the Kubernetes API Server, Controller manager, scheduler and kubectl binaries
+  ansible.builtin.get_url:
+    url: "{{ item }}"
+    dest: "{{ temp_dir }}"
+  loop:
+    - "{{ kube_api_dl }}"
+    - "{{ kube_controller_manager_dl }}"
+    - "{{ kube_scheduler_dl }}"
+    - "{{ kubectl_dl }}"
+  when:
+    - '"controller-" in inventory_hostname'
+
+- name: Move binaries to /usr/local/bin
+  ansible.builtin.copy:
+    src: "{{ temp_dir }}/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: "0775"
+    remote_src: yes
+    force: yes
+  loop:
+    - kube-apiserver
+    - kube-controller-manager
+    - kube-scheduler
+    - kubectl
+  become: yes
+  when: '"controller-" in inventory_hostname'
+
+- name: Configure the Kubernetes API Server
+  ansible.builtin.copy:
+    src: "{{ remote_path }}/{{ item }}"
+    dest: /var/lib/kubernetes/
+    remote_src: yes
+    force: yes
+  loop:
+    - ca.pem
+    - ca-key.pem
+    - kubernetes-key.pem
+    - kubernetes.pem
+    - service-account-key.pem
+    - service-account.pem
+    - encryption-config.yaml
+  become: yes
+  when: '"controller-" in inventory_hostname'
+
+- name: Template API server service file
+  ansible.builtin.template:
+    src: kube-apiserver.service.j2
+    dest: "{{ kube_api_service_path }}"
+  become: yes
+  when: '"controller-" in inventory_hostname'
+  tags: template
+
+- name: Copy kube-controller-manager.kubeconfig & kube-scheduler.kubeconfig to /var/lib/kubernetes
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: /var/lib/kubernetes
+    remote_src: yes
+    force: yes
+  loop:
+    - "{{ remote_path }}/kube-controller-manager.kubeconfig"
+    - "{{ remote_path }}/kube-scheduler.kubeconfig"
+  become: yes
+  when: '"controller-" in inventory_hostname'
+  tags: copy
+  
+
+- name: Template kube controller manager service file
+  ansible.builtin.template:
+    src: kube-controller-manager.j2
+    dest: "{{ kube_controller_manager_service_path }}"
+  become: yes
+  when: '"controller-" in inventory_hostname'
+
+- name: Copy kube-scheduler.yaml configuration file
+  ansible.builtin.copy:
+    src: kube-scheduler.yaml
+    dest: "{{ kube_scheduler_config_path }}"
+  become: yes
+  when: '"controller-" in inventory_hostname'
+
+- name: Copy kube-scheduler service
+  ansible.builtin.copy:
+    src: kube-scheduler.service
+    dest: "{{ kube_scheduler_service_path }}"
+  become: yes
+  when: '"controller-" in inventory_hostname'
+ 
+- name: daemon_reload
+  ansible.builtin.systemd:
+    daemon_reload: yes
+  become: yes
+  when: '"controller-" in inventory_hostname'
+
+- name: Register and start kube-api, kube-controller-manager and kube-scheduler services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+  register: service_stat
+  become: yes
+  loop:
+    - kube-apiserver
+    - kube-controller-manager
+    - kube-scheduler
+  when: '"controller-" in inventory_hostname'
+  tags: copy
+
+- name: Display service status
+  debug:
+    msg: "{{ service_stat }}"
+  when: '"controller-" in inventory_hostname'
+  tags: copy
+
+- name: Copy Nginx HTTP health check proxy for HTTP health check
+  ansible.builtin.copy:
+    src: kubernetes.default.svc.cluster.local
+    dest: "{{ nginx_healthcheck_path }}"
+  become: yes
+  when: '"controller-" in inventory_hostname'
+
+- name: Create Nginx symbolic link
+  ansible.builtin.file:
+    src: "{{ nginx_healthcheck_path }}"
+    dest: "{{ nginx_sites_enabled_path }}/{{ nginx_filename }}"
+    state: link
+    force: yes
+  become: yes
+  when: '"controller-" in inventory_hostname'
+
+- name: Register and start Nginx
+  ansible.builtin.systemd:
+    name: "nginx"
+    state: restarted
+    daemon_reload: yes
+  become: yes
+  when: '"controller-" in inventory_hostname'
+
+# these tasks run only on 1 controller host.
+
+- name: Copy rbac cluster role, cluster role bind files to remote remote_path
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ remote_path }}"
+  loop:
+    - "cluster-role-rbac.yml"
+    - "cluster-role-bind-rbac.yml"
+  when: '"controller-1" == inventory_hostname'
+
+- name: Create the system:kube-apiserver-to-kubelet ClusterRole with permissions to access the Kublet API
+  ansible.builtin.command: "kubectl apply --kubeconfig {{ remote_path }}/admin.kubeconfig -f {{ remote_path }}/cluster-role-rbac.yml"
+  register: rbac_role_apply
+  when: '"controller-1" == inventory_hostname'
+
+- name: Print rbac role authorization cmd reply
+  debug:
+    msg: "{{ rbac_role_apply }}"
+  when: '"controller-1" == inventory_hostname'
+
+- name: Bind the system:kube-apiserver-to-kubelet ClusterRole to the Kubernetes user
+  ansible.builtin.command: "kubectl apply --kubeconfig {{ remote_path }}/admin.kubeconfig -f {{ remote_path }}/cluster-role-bind-rbac.yml"
+  register: rbac_role_bind_apply
+  when: '"controller-1" == inventory_hostname'
+
+- name: Print rbac role bind authorization cmd reply
+  debug:
+    msg: "{{ rbac_role_bind_apply }}"
+  when: '"controller-1" == inventory_hostname'
+
+- name: Request Kubernetes version info
+  ansible.builtin.command: "curl --cacert {{ remote_path }}/ca.pem https://{{ kubernetes_public_address }}:6443/version"
+  register: k8s_version
+  when: '"controller-1" == inventory_hostname'
+  tags: print
+
+- name: Print kubernetes version info
+  debug:
+    msg: "{{ k8s_version.stdout_lines }}"
+  when: '"controller-1" == inventory_hostname'
+  tags: print
+
+- name: Test Nginx HTTP health check proxy
+  ansible.builtin.command: "curl -H \"Host: kubernetes.default.svc.cluster.local\" -i http://127.0.0.1/healthz"
+  register: http_health_proxy
+  when: '"controller-" in inventory_hostname'
+
+- name: Print Nginx HTTP health check proxy
+  debug:
+    msg: "{{ http_health_proxy }}"
+  when: '"controller-" in inventory_hostname'

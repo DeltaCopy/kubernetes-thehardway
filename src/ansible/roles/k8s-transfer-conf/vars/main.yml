@@ -1,0 +1,8 @@
+---
+# Vars file for k8s setup
+
+remote_path: /home/{{ ansible_ssh_user }}/k8s-thw
+certs_archive: ~/Documents/utils/terraform/02-k8s-gcp-cluster/k8s-certs/k8s-certs.tar.gz
+kubeconfig_archive: ~/Documents/utils/terraform/02-k8s-gcp-cluster/k8s-conf/k8s-kubeconfig.tar.gz
+encryption_config: ~/Documents/utils/terraform/02-k8s-gcp-cluster/k8s-conf/encryption-config.yaml
+
